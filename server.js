@@ -18,13 +18,22 @@ function must(name) {
 
 const transporter = nodemailer.createTransport({
   host: must("SMTP_HOST"),
-  port: Number(must("SMTP_PORT")),
-  secure: String(process.env.SMTP_SECURE).toLowerCase() === "true",
+  port: Number(must("SMTP_PORT")),          // 587
+  secure: false,                            // STARTTLS
   auth: {
     user: must("SMTP_USER"),
     pass: must("SMTP_PASS"),
   },
+  requireTLS: true,                         // força STARTTLS
+  connectionTimeout: 30000,
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
+  tls: {
+    servername: must("SMTP_HOST"),
+    minVersion: "TLSv1.2",
+  },
 });
+
 
 app.get("/", (req, res) => res.send("OK"));
 
