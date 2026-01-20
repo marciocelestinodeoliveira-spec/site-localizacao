@@ -1,13 +1,13 @@
 import express from "express";
-import nodemailer from "nodemailer";
 import dotenv from "dotenv";
+import fetch from "node-fetch";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-// Troque/adicione tokens aqui
+// ✅ Tokens válidos (adicione mais se quiser)
 const validTokens = new Set(["ABC123"]);
 
 function must(name) {
@@ -16,24 +16,28 @@ function must(name) {
   return v;
 }
 
-const transporter = nodemailer.createTransport({
-  host: must("SMTP_HOST"),
-  port: Number(must("SMTP_PORT")),          // 587
-  secure: false,                            // STARTTLS
-  auth: {
-    user: must("SMTP_USER"),
-    pass: must("SMTP_PASS"),
-  },
-  requireTLS: true,                         // força STARTTLS
-  connectionTimeout: 30000,
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
-  tls: {
-    servername: must("SMTP_HOST"),
-    minVersion: "TLSv1.2",
-  },
-});
+async function sendEmailSendGrid({ from, to, subject, text }) {
+  const apiKey = must("SENDGRID_API_KEY");
 
+  const r = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: from },
+      subject,
+      content: [{ type: "text/plain", value: text }],
+    }),
+  });
+
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`SendGrid API error ${r.status}: ${body}`);
+  }
+}
 
 app.get("/", (req, res) => res.send("OK"));
 
@@ -41,7 +45,6 @@ app.get("/loc/:token", (req, res) => {
   const { token } = req.params;
   if (!validTokens.has(token)) return res.status(404).send("Link inválido.");
 
-  // ⚠️ HTML precisa estar dentro de string (aqui usamos template string com crases)
   res.type("html").send(`<!doctype html>
 <html>
 <head>
@@ -58,32 +61,65 @@ app.get("/loc/:token", (req, res) => {
 
 <script>
   const out = document.getElementById("out");
-  document.getElementById("btn").onclick = async () => {
+  const btn = document.getElementById("btn");
+
+  function getPos(options) {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    });
+  }
+
+  btn.onclick = async () => {
     if (!navigator.geolocation) {
       out.textContent = "Geolocalização não suportada.";
       return;
     }
 
-    out.textContent = "Obtendo localização...";
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const payload = {
-        token: "${token}",
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude,
-        acc: pos.coords.accuracy,
-        ts: Date.now()
-      };
+    btn.disabled = true;
+    out.textContent = "Obtendo localização (alta precisão)...";
 
-      const r = await fetch("/api/location", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload)
-      });
+    let pos;
+    try {
+      pos = await getPos({ enableHighAccuracy: true, timeout: 30000, maximumAge: 0 });
+    } catch (e1) {
+      out.textContent = "Alta precisão demorou. Tentando modo padrão...";
+      try {
+        pos = await getPos({ enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 });
+      } catch (e2) {
+        btn.disabled = false;
+        out.textContent =
+          "Não foi possível obter a localização. " +
+          "Abra em 'Chrome', ative Localização do celular e permita 'Localização precisa'. " +
+          "Erro: " + (e2.message || e2);
+        return;
+      }
+    }
 
-      out.textContent = r.ok ? "Enviado com sucesso ✅" : ("Falha ao enviar ❌ (" + r.status + ")");
-    }, (err) => {
-      out.textContent = "Erro/permissão: " + err.message;
-    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    out.textContent = "Enviando...";
+    const payload = {
+      token: "${token}",
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      acc: pos.coords.accuracy,
+      ts: Date.now()
+    };
+
+    const r = await fetch("/api/location", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+
+    if (r.ok) {
+      out.textContent = "Enviado com sucesso ✅";
+    } else {
+      let msg = "Falha ao enviar ❌ (" + r.status + ")";
+      try {
+        const data = await r.json();
+        if (data && data.error) msg += " - " + data.error;
+      } catch (_) {}
+      out.textContent = msg;
+    }
   };
 </script>
 </body>
@@ -92,16 +128,19 @@ app.get("/loc/:token", (req, res) => {
 
 app.post("/api/location", async (req, res) => {
   const { token, lat, lon, acc, ts } = req.body || {};
-  if (!token || !validTokens.has(token)) return res.status(403).json({ ok: false });
-  if (typeof lat !== "number" || typeof lon !== "number") return res.status(400).json({ ok: false });
+  if (!token || !validTokens.has(token)) return res.status(403).json({ ok: false, error: "invalid_token" });
+  if (typeof lat !== "number" || typeof lon !== "number") return res.status(400).json({ ok: false, error: "bad_coords" });
 
   const maps = `https://www.google.com/maps?q=${lat},${lon}`;
   const when = new Date(ts || Date.now()).toISOString();
 
+  const from = process.env.FROM_EMAIL || must("TO_EMAIL");
+  const to = must("TO_EMAIL");
+
   try {
-    await transporter.sendMail({
-      from: process.env.FROM_EMAIL || must("SMTP_USER"),
-      to: must("TO_EMAIL"),
+    await sendEmailSendGrid({
+      from,
+      to,
       subject: `📍 Localização recebida (${token})`,
       text:
 `Token: ${token}
@@ -119,7 +158,7 @@ Maps: ${maps}`
   }
 });
 
-// Render gosta do host 0.0.0.0
 app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
   console.log("Server up");
 });
+
