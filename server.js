@@ -95,36 +95,58 @@ app.get("/loc/:token", (req, res) => {
   const out = document.getElementById("out");
   const btn = document.getElementById("btn");
 
-  function getPos(options) {
+  function bestFix({ maxWaitMs = 20000, minAcc = 30 } = {}) {
     return new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      if (!navigator.geolocation) return reject(new Error("Geolocalização não suportada."));
+
+      let best = null;
+      const start = Date.now();
+
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const acc = pos.coords.accuracy;
+          if (!best || acc < best.coords.accuracy) best = pos;
+
+          // Se já está bom o suficiente, finaliza
+          if (acc <= minAcc) {
+            navigator.geolocation.clearWatch(watchId);
+            resolve(best);
+          }
+
+          // Atualiza UI com a melhor precisão até agora
+          out.textContent = `Buscando GPS... melhor precisão: ${Math.round(best.coords.accuracy)} m`;
+        },
+        (err) => {
+          navigator.geolocation.clearWatch(watchId);
+          reject(err);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      );
+
+      // Para depois de maxWaitMs e devolve a melhor que conseguiu
+      const t = setInterval(() => {
+        const elapsed = Date.now() - start;
+        if (elapsed >= maxWaitMs) {
+          clearInterval(t);
+          navigator.geolocation.clearWatch(watchId);
+          if (best) resolve(best);
+          else reject(new Error("Sem fix GPS a tempo."));
+        }
+      }, 250);
     });
   }
 
   btn.onclick = async () => {
-    if (!navigator.geolocation) {
-      out.textContent = "Geolocalização não suportada.";
-      return;
-    }
-
     btn.disabled = true;
-    out.textContent = "Obtendo localização (alta precisão)...";
+    out.textContent = "Iniciando GPS (pode levar alguns segundos)...";
 
     let pos;
     try {
-      pos = await getPos({ enableHighAccuracy: true, timeout: 30000, maximumAge: 0 });
-    } catch (e1) {
-      out.textContent = "Alta precisão demorou. Tentando modo padrão...";
-      try {
-        pos = await getPos({ enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 });
-      } catch (e2) {
-        btn.disabled = false;
-        out.textContent =
-          "Não foi possível obter a localização. " +
-          "Abra em 'Chrome', ative Localização do celular e permita 'Localização precisa'. " +
-          "Erro: " + (e2.message || e2);
-        return;
-      }
+      pos = await bestFix({ maxWaitMs: 20000, minAcc: 30 }); // tente 30m ou melhor
+    } catch (e) {
+      btn.disabled = false;
+      out.textContent = "Não foi possível obter boa precisão. Erro: " + (e.message || e);
+      return;
     }
 
     out.textContent = "Enviando...";
@@ -142,18 +164,11 @@ app.get("/loc/:token", (req, res) => {
       body: JSON.stringify(payload)
     });
 
-    if (r.ok) {
-      out.textContent = "Enviado com sucesso ✅";
-    } else {
-      let msg = "Falha ao enviar ❌ (" + r.status + ")";
-      try {
-        const data = await r.json();
-        if (data && data.error) msg += " - " + data.error;
-      } catch (_) {}
-      out.textContent = msg;
-    }
+    if (r.ok) out.textContent = `Enviado ✅ (precisão ~${Math.round(pos.coords.accuracy)} m)`;
+    else out.textContent = "Falha ao enviar ❌ (" + r.status + ")";
   };
 </script>
+
 </body>
 </html>`);
 });
